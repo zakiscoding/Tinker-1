@@ -188,6 +188,15 @@ def profile_sidebar():
     st.sidebar.header("Mood profile")
 
     profile = st.session_state.profile
+    current_chill = int(profile.get("chill_max_energy", 3))
+    current_hype = int(profile.get("hype_min_energy", 7))
+
+    if current_chill >= current_hype:
+        current_chill = max(1, min(current_chill, 9))
+        current_hype = min(10, current_chill + 1)
+        profile["chill_max_energy"] = current_chill
+        profile["hype_min_energy"] = current_hype
+        st.sidebar.caption("Mood thresholds were adjusted to keep Chill and Hype ranges distinct.")
 
     profile["name"] = st.sidebar.text_input(
         "Profile name",
@@ -196,18 +205,19 @@ def profile_sidebar():
 
     col1, col2 = st.sidebar.columns(2)
     with col1:
-        profile["hype_min_energy"] = st.sidebar.slider(
-            "Hype min energy",
-            min_value=1,
-            max_value=10,
-            value=int(profile.get("hype_min_energy", 7)),
-        )
-    with col2:
-        profile["chill_max_energy"] = st.sidebar.slider(
+        profile["chill_max_energy"] = st.slider(
             "Chill max energy",
             min_value=1,
+            max_value=9,
+            value=current_chill,
+        )
+    with col2:
+        hype_default = max(current_hype, profile["chill_max_energy"] + 1)
+        profile["hype_min_energy"] = st.slider(
+            "Hype min energy",
+            min_value=profile["chill_max_energy"] + 1,
             max_value=10,
-            value=int(profile.get("chill_max_energy", 3)),
+            value=hype_default,
         )
 
     genre_options = ["rock", "lofi", "pop", "jazz", "electronic", "ambient", "other"]
@@ -251,11 +261,25 @@ def add_song_sidebar():
             "energy": energy,
             "tags": tags,
         }
-        if title and artist:
-            normalized = normalize_song(song)
-            all_songs = st.session_state.songs[:]
-            all_songs.append(normalized)
-            st.session_state.songs = all_songs
+        if not title.strip() or not artist.strip():
+            st.sidebar.warning("Title and artist are required.")
+            return
+
+        normalized = normalize_song(song)
+        duplicate_exists = any(
+            str(existing.get("title", "")).strip().casefold() == normalized["title"].casefold()
+            and str(existing.get("artist", "")).strip().casefold() == normalized["artist"].casefold()
+            for existing in st.session_state.songs
+        )
+
+        if duplicate_exists:
+            st.sidebar.info("That song is already in the playlist.")
+            return
+
+        all_songs = st.session_state.songs[:]
+        all_songs.append(normalized)
+        st.session_state.songs = all_songs
+        st.sidebar.success("Song added.")
 
 
 def playlist_tabs(playlists):
@@ -279,8 +303,12 @@ def render_playlist(label, songs):
         st.write("No songs in this playlist.")
         return
 
-    query = st.text_input(f"Search {label} playlist by artist", key=f"search_{label}")
-    filtered = search_songs(songs, query, field="artist")
+    query = st.text_input(
+        f"Search {label} playlist",
+        key=f"search_{label}",
+        placeholder="Title, artist, genre, or tag",
+    )
+    filtered = search_songs(songs, query, field="any")
 
     if not filtered:
         st.write("No matching songs.")
