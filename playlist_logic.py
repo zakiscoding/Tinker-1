@@ -23,11 +23,13 @@ def normalize_artist(artist: str) -> str:
     """Normalize an artist name for comparisons."""
     if not artist:
         return ""
-    return artist.strip().lower()
+    return artist.strip()
 
 
 def normalize_genre(genre: str) -> str:
     """Normalize a genre name for comparisons."""
+    if not isinstance(genre, str):
+        return ""
     return genre.lower().strip()
 
 
@@ -44,25 +46,37 @@ def normalize_song(raw: Song) -> Song:
         except ValueError:
             energy = 0
 
+    if not isinstance(energy, int):
+        energy = 0
+
+    if energy < 1:
+        energy = 1
+    elif energy > 10:
+        energy = 10
+
     tags = raw.get("tags", [])
     if isinstance(tags, str):
         tags = [tags]
+
+    normalized_tags = []
+    for tag in tags:
+        cleaned = str(tag).strip().lower()
+        if cleaned:
+            normalized_tags.append(cleaned)
 
     return {
         "title": title,
         "artist": artist,
         "genre": genre,
         "energy": energy,
-        "tags": tags,
+        "tags": normalized_tags,
     }
 
 
 def classify_song(song: Song, profile: Dict[str, object]) -> str:
     """Return a mood label given a song and user profile."""
-    energy = song.get("energy", 0)
-    genre = song.get("genre", "")
-    title = song.get("title", "")
-
+    energy = int(song.get("energy", 0))
+    genre = str(song.get("genre", ""))
     hype_min_energy = profile.get("hype_min_energy", 7)
     chill_max_energy = profile.get("chill_max_energy", 3)
     favorite_genre = profile.get("favorite_genre", "")
@@ -73,10 +87,12 @@ def classify_song(song: Song, profile: Dict[str, object]) -> str:
     is_hype_keyword = any(k in genre for k in hype_keywords)
     is_chill_keyword = any(k in genre for k in chill_keywords)
 
-    if genre == favorite_genre or energy >= hype_min_energy or is_hype_keyword:
-        return "Hype"
     if energy <= chill_max_energy or is_chill_keyword:
         return "Chill"
+    if energy >= hype_min_energy or is_hype_keyword:
+        return "Hype"
+    if genre == favorite_genre:
+        return "Hype"
     return "Mixed"
 
 
@@ -141,17 +157,22 @@ def compute_playlist_stats(playlists: PlaylistMap) -> Dict[str, object]:
 def most_common_artist(songs: List[Song]) -> Tuple[str, int]:
     """Return the most common artist and count."""
     counts: Dict[str, int] = {}
+    display_names: Dict[str, str] = {}
     for song in songs:
-        artist = str(song.get("artist", ""))
+        artist = str(song.get("artist", "")).strip()
         if not artist:
             continue
-        counts[artist] = counts.get(artist, 0) + 1
+
+        artist_key = artist.casefold()
+        counts[artist_key] = counts.get(artist_key, 0) + 1
+        display_names.setdefault(artist_key, artist)
 
     if not counts:
         return "", 0
 
-    items = sorted(counts.items(), key=lambda item: item[1], reverse=True)
-    return items[0]
+    items = sorted(counts.items(), key=lambda item: (-item[1], display_names[item[0]].casefold()))
+    artist_key, count = items[0]
+    return display_names[artist_key], count
 
 
 def search_songs(
@@ -164,11 +185,29 @@ def search_songs(
         return songs
 
     q = query.lower().strip()
+    if not q:
+        return songs
+
     filtered: List[Song] = []
 
     for song in songs:
-        value = str(song.get(field, "")).lower()
-        if value and q in value:
+        values: List[str] = []
+
+        if field == "any":
+            tags = song.get("tags", [])
+            if not isinstance(tags, list):
+                tags = [tags]
+
+            values = [
+                str(song.get("title", "")).lower(),
+                str(song.get("artist", "")).lower(),
+                str(song.get("genre", "")).lower(),
+                " ".join(str(tag).lower() for tag in tags),
+            ]
+        else:
+            values = [str(song.get(field, "")).lower()]
+
+        if any(value and q in value for value in values):
             filtered.append(song)
 
     return filtered
