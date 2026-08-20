@@ -28,6 +28,8 @@ def normalize_artist(artist: str) -> str:
 
 def normalize_genre(genre: str) -> str:
     """Normalize a genre name for comparisons."""
+    if not isinstance(genre, str):
+        return ""
     return genre.lower().strip()
 
 
@@ -44,6 +46,14 @@ def normalize_song(raw: Song) -> Song:
         except ValueError:
             energy = 0
 
+    if not isinstance(energy, int):
+        energy = 0
+
+    if energy < 1:
+        energy = 1
+    if energy > 10:
+        energy = 10
+
     tags = raw.get("tags", [])
     if isinstance(tags, str):
         tags = [tags]
@@ -59,9 +69,8 @@ def normalize_song(raw: Song) -> Song:
 
 def classify_song(song: Song, profile: Dict[str, object]) -> str:
     """Return a mood label given a song and user profile."""
-    energy = song.get("energy", 0)
-    genre = song.get("genre", "")
-    title = song.get("title", "")
+    energy = int(song.get("energy", 0))
+    genre = str(song.get("genre", ""))
 
     hype_min_energy = profile.get("hype_min_energy", 7)
     chill_max_energy = profile.get("chill_max_energy", 3)
@@ -150,7 +159,7 @@ def most_common_artist(songs: List[Song]) -> Tuple[str, int]:
     if not counts:
         return "", 0
 
-    items = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     return items[0]
 
 
